@@ -9,9 +9,23 @@ router.post('/register', async (req, res) => {
     const { name, email, password, role } = req.body;
 
     if (!name || !email || !password || !role) {
-      return res.status(400).json({ 
-        success: false, 
-        error: 'Name, email, password, and role are required' 
+      return res.status(400).json({
+        success: false,
+        error: 'Name, email, password, and role are required'
+      });
+    }
+
+    // Check if email already exists
+    const { data: existingUser, error: checkError } = await supabase
+      .from('users')
+      .select('email')
+      .eq('email', email)
+      .single();
+
+    if (existingUser) {
+      return res.status(409).json({
+        success: false,
+        error: 'This email is already registered. Please sign in instead.'
       });
     }
 
@@ -31,6 +45,13 @@ router.post('/register', async (req, res) => {
 
     res.status(201).json({ success: true, data });
   } catch (error) {
+    // Handle duplicate email error from database
+    if (error.code === '23505' || error.message?.includes('unique constraint')) {
+      return res.status(409).json({
+        success: false,
+        error: 'This email is already registered. Please sign in instead.'
+      });
+    }
     res.status(500).json({ success: false, error: error.message });
   }
 });
@@ -38,12 +59,12 @@ router.post('/register', async (req, res) => {
 // Login user
 router.post('/login', async (req, res) => {
   try {
-    const { email, password } = req.body;
+    const { email, password, role } = req.body;
 
-    if (!email || !password) {
+    if (!email || !password || !role) {
       return res.status(400).json({ 
         success: false, 
-        error: 'Email and password are required' 
+        error: 'Email, password, and role are required' 
       });
     }
 
@@ -66,6 +87,14 @@ router.post('/login', async (req, res) => {
       return res.status(401).json({ 
         success: false, 
         error: 'Invalid email or password' 
+      });
+    }
+
+    // Check if user role matches expected role
+    if (data.role !== role) {
+      return res.status(403).json({
+        success: false,
+        error: `Access denied. You are registered as a ${data.role}, not as a ${role}.`
       });
     }
 
