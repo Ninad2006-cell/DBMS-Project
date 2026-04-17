@@ -9,9 +9,23 @@ router.post('/register', async (req, res) => {
     const { name, email, password, role } = req.body;
 
     if (!name || !email || !password || !role) {
-      return res.status(400).json({ 
-        success: false, 
-        error: 'Name, email, password, and role are required' 
+      return res.status(400).json({
+        success: false,
+        error: 'Name, email, password, and role are required'
+      });
+    }
+
+    // Check if email already exists
+    const { data: existingUser, error: checkError } = await supabase
+      .from('users')
+      .select('email')
+      .eq('email', email)
+      .single();
+
+    if (existingUser) {
+      return res.status(409).json({
+        success: false,
+        error: 'This email is already registered. Please sign in instead.'
       });
     }
 
@@ -31,6 +45,13 @@ router.post('/register', async (req, res) => {
 
     res.status(201).json({ success: true, data });
   } catch (error) {
+    // Handle duplicate email error from database
+    if (error.code === '23505' || error.message?.includes('unique constraint')) {
+      return res.status(409).json({
+        success: false,
+        error: 'This email is already registered. Please sign in instead.'
+      });
+    }
     res.status(500).json({ success: false, error: error.message });
   }
 });

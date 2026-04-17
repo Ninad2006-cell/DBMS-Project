@@ -1,13 +1,15 @@
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Bell, CheckCircle, X, AlertCircle } from 'lucide-react';
 import { apiService } from '../services/api';
 import '../styles/Notifications.css';
 
-const Notifications = ({ userId }) => {
+const Notifications = ({ userId, isAdmin }) => {
   const [notifications, setNotifications] = useState([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [isOpen, setIsOpen] = useState(false);
   const [loading, setLoading] = useState(false);
+  const navigate = useNavigate();
 
   useEffect(() => {
     if (userId) {
@@ -34,7 +36,7 @@ const Notifications = ({ userId }) => {
     try {
       const response = await apiService.getUnreadNotificationsCount(userId);
       if (response.success) {
-        setUnreadCount(response.data.count);
+        setUnreadCount(response.count);
       }
     } catch (error) {
       console.error('Error fetching unread count:', error);
@@ -72,6 +74,31 @@ const Notifications = ({ userId }) => {
     if (diffInHours < 24) return `${Math.floor(diffInHours)}h ago`;
     if (diffInHours < 48) return 'Yesterday';
     return date.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
+  };
+
+  const handleNotificationClick = async (notification) => {
+    // Mark as read if unread
+    if (!notification.read_status) {
+      await markAsRead(notification.notification_id);
+    }
+    
+    // Close dropdown
+    setIsOpen(false);
+    
+    // Navigate based on user role and notification type
+    if (isAdmin) {
+      // Admin notifications - go to applications page
+      navigate('/admin/applications');
+    } else {
+      // Student notifications
+      if (notification.notification_type === 'application') {
+        navigate('/applications');
+      } else if (notification.scholarship_id) {
+        navigate(`/scholarships/${notification.scholarship_id}`);
+      } else {
+        navigate('/applications');
+      }
+    }
   };
 
   return (
@@ -113,7 +140,7 @@ const Notifications = ({ userId }) => {
                 <div 
                   key={notification.notification_id}
                   className={`notification-item ${!notification.read_status ? 'unread' : ''}`}
-                  onClick={() => !notification.read_status && markAsRead(notification.notification_id)}
+                  onClick={() => handleNotificationClick(notification)}
                 >
                   <div className="notification-icon">
                     {notification.notification_type === 'application' ? (

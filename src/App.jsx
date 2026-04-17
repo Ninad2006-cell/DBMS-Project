@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router-dom";
 import Navbar from "./components/Navbar";
 import Footer from "./components/Footer";
@@ -23,25 +23,36 @@ import { currentStudent, adminUser } from "./data/dummyData";
 import "./App.css";
 
 function App() {
-    // Authentication state (in a real app, this would come from an auth context/API)
-    const [user, setUser] = useState(null);
-    const [isAdmin, setIsAdmin] = useState(false);
+    // Load user from localStorage on initial load
+    const [user, setUser] = useState(() => {
+        const savedUser = localStorage.getItem('user');
+        return savedUser ? JSON.parse(savedUser) : null;
+    });
+    const [isAdmin, setIsAdmin] = useState(() => {
+        const savedIsAdmin = localStorage.getItem('isAdmin');
+        return savedIsAdmin ? JSON.parse(savedIsAdmin) : false;
+    });
 
     // Handle login
     const handleLogin = (userData, adminStatus = false) => {
         setUser(userData);
         setIsAdmin(adminStatus);
+        localStorage.setItem('user', JSON.stringify(userData));
+        localStorage.setItem('isAdmin', JSON.stringify(adminStatus));
     };
 
     // Handle logout
     const handleLogout = () => {
         setUser(null);
         setIsAdmin(false);
+        localStorage.removeItem('user');
+        localStorage.removeItem('isAdmin');
     };
 
     // Handle user profile update
     const handleUpdateUser = (updatedUser) => {
         setUser(updatedUser);
+        localStorage.setItem('user', JSON.stringify(updatedUser));
     };
 
     return (

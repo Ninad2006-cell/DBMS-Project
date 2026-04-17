@@ -62,7 +62,7 @@ function Navbar({ user, isAdmin, onLogout }) {
         <div className="navbar-right">
           {/* Notifications */}
           {user && (
-            <Notifications userId={user.user_id} />
+            <Notifications userId={user.user_id} isAdmin={isAdmin} />
           )}
 
           {/* User Info */}
