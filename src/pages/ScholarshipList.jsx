@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   Search,
@@ -10,46 +10,144 @@ import {
   SlidersHorizontal,
   X,
   CheckCircle,
+  Loader2,
 } from "lucide-react";
-import { scholarships } from "../data/dummyData";
+import { apiService } from "../services/api";
 import EligibilityBadge from "../components/EligibilityBadge";
 import "../styles/ScholarshipList.css";
 
 function ScholarshipList({ user }) {
   const navigate = useNavigate();
+  const [scholarships, setScholarships] = useState([]);
+  const [userProfile, setUserProfile] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [showFilters, setShowFilters] = useState(false);
   const [filters, setFilters] = useState({
     category: "all",
     income: "all",
-    caste: user?.caste || "all",
+    caste: "all",
     eligibility: "all",
   });
+
+  // Fetch scholarships and user profile from API
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        setLoading(true);
+        
+        // Fetch scholarships
+        const scholarshipsResponse = await apiService.getScholarships();
+        
+        // Fetch user profile if logged in
+        let profileData = null;
+        if (user?.user_id) {
+          try {
+            const profileResponse = await apiService.getStudentProfileByUserId(user.user_id);
+            if (profileResponse.success) {
+              profileData = profileResponse.data;
+            }
+          } catch (profileErr) {
+            // Profile may not exist yet, that's ok
+            console.log("Profile not found, using defaults");
+          }
+        }
+        
+        if (scholarshipsResponse.success) {
+          // Transform data to match frontend format
+          const transformed = scholarshipsResponse.data.map(s => ({
+            id: s.scholarship_id,
+            name: s.name,
+            description: s.description,
+            provider: "VJTI Trust",
+            amount: s.amount,
+            deadline: s.deadline,
+            category: s.category || "General",
+            status: s.is_active ? "Active" : "Inactive",
+            eligibility: {
+              minCgpa: s.min_cgpa || 0,
+              maxIncome: s.max_income || 10000000,
+              category: s.category === "ALL" ? ["All"] : s.category ? [s.category] : ["All"],
+              departments: ["All"],
+              year: [1, 2, 3, 4],
+              gender: s.gender || "all",
+              hosteller: s.hosteller
+            }
+          }));
+          setScholarships(transformed);
+          setUserProfile(profileData);
+          
+          // Set caste filter based on user's category if available
+          if (profileData?.category) {
+            setFilters(prev => ({ ...prev, caste: profileData.category }));
+          }
+        } else {
+          setError("Failed to fetch scholarships");
+        }
+      } catch (err) {
+        setError(err.message || "Error loading scholarships");
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchData();
+  }, [user?.user_id]);
 
   // Check eligibility for a scholarship
   const checkEligibility = (scholarship) => {
     if (!user) return { status: "partial", reason: "Login to check eligibility" };
+    
+    // Use userProfile data if available, otherwise use user data
+    const studentData = userProfile || user;
+    
+    // Map database fields to eligibility check fields
+    const studentCgpa = parseFloat(studentData.cgpa) || 0;
+    const studentIncome = parseFloat(studentData.income) || 0;
+    const studentCategory = studentData.category || studentData.caste || "";
+    const studentGender = (studentData.gender || "").toLowerCase();
+    const studentYear = parseInt(studentData.year) || parseInt(studentData.year_of_study) || 1;
+    const studentHosteller = studentData.hosteller || false;
 
     const reasons = [];
+    const minCgpa = parseFloat(scholarship.eligibility.minCgpa) || 0;
+    const maxIncome = parseFloat(scholarship.eligibility.maxIncome) || 10000000;
 
-    if (user.cgpa < scholarship.eligibility.minCgpa) {
-      reasons.push(`CGPA must be at least ${scholarship.eligibility.minCgpa}`);
+    // Check CGPA
+    if (studentCgpa < minCgpa) {
+      reasons.push(`CGPA must be at least ${minCgpa} (you have ${studentCgpa})`);
     }
 
-    if (user.income > scholarship.eligibility.maxIncome) {
-      reasons.push(`Family income must be below ₹${scholarship.eligibility.maxIncome.toLocaleString()}`);
+    // Check Income
+    if (studentIncome > maxIncome) {
+      reasons.push(`Family income must be below ₹${maxIncome.toLocaleString()} (you have ₹${studentIncome.toLocaleString()})`);
     }
 
-    if (!scholarship.eligibility.caste.includes(user.caste) && !scholarship.eligibility.caste.includes("All")) {
-      reasons.push(`Only for ${scholarship.eligibility.caste.join(", ")} categories`);
+    // Check Category (scholarship category vs student category)
+    const allowedCategories = scholarship.eligibility.category || scholarship.eligibility.caste || ["All"];
+    const categoryMatch = allowedCategories.includes("All") || 
+                          allowedCategories.includes(studentCategory) ||
+                          allowedCategories.some(cat => cat.toLowerCase() === studentCategory.toLowerCase());
+    if (!categoryMatch && studentCategory) {
+      reasons.push(`Only for ${allowedCategories.join(", ")} categories (you are ${studentCategory})`);
     }
 
-    if (scholarship.eligibility.gender && scholarship.eligibility.gender !== user.gender) {
+    // Check Gender
+    const scholarshipGender = (scholarship.eligibility.gender || "all").toLowerCase();
+    if (scholarshipGender !== "all" && scholarshipGender !== studentGender && studentGender) {
       reasons.push(`Only for ${scholarship.eligibility.gender} students`);
     }
 
-    if (!scholarship.eligibility.year.includes(user.year)) {
-      reasons.push(`Only for year ${scholarship.eligibility.year.join(", ")} students`);
+    // Check Year
+    const allowedYears = scholarship.eligibility.year || [1, 2, 3, 4];
+    if (!allowedYears.includes(studentYear)) {
+      reasons.push(`Only for year ${allowedYears.join(", ")} students (you are year ${studentYear})`);
+    }
+    
+    // Check Hosteller requirement (if scholarship requires hosteller)
+    if (scholarship.eligibility.hosteller === true && !studentHosteller) {
+      reasons.push(`Only for hosteller students`);
     }
 
     if (reasons.length === 0) {
@@ -83,9 +181,10 @@ function ScholarshipList({ user }) {
         if (filters.income === "above5l" && scholarship.eligibility.maxIncome <= 500000) return false;
       }
 
-      // Caste filter
+      // Category/Caste filter
       if (filters.caste !== "all") {
-        if (!scholarship.eligibility.caste.includes(filters.caste) && !scholarship.eligibility.caste.includes("All")) {
+        const allowedCategories = scholarship.eligibility.category || scholarship.eligibility.caste || ["All"];
+        if (!allowedCategories.includes("All") && !allowedCategories.includes(filters.caste)) {
           return false;
         }
       }
@@ -227,15 +326,35 @@ function ScholarshipList({ user }) {
               <X className="btn-icon" />
               Clear All Filters
             </button>
-            <span className="results-count">
-              Showing {filteredScholarships.length} of {scholarships.length} scholarships
-            </span>
+            {!loading && (
+              <span className="results-count">
+                Showing {filteredScholarships.length} of {scholarships.length} scholarships
+              </span>
+            )}
           </div>
         </div>
       )}
 
+      {/* Loading State */}
+      {loading && (
+        <div className="loading-container">
+          <Loader2 className="loading-spinner" />
+          <p>Loading scholarships...</p>
+        </div>
+      )}
+
+      {/* Error State */}
+      {error && !loading && (
+        <div className="error-container">
+          <p className="error-message">{error}</p>
+          <button className="retry-btn" onClick={() => window.location.reload()}>
+            Retry
+          </button>
+        </div>
+      )}
+
       {/* Results Count */}
-      {!showFilters && (
+      {!loading && !error && !showFilters && (
         <div className="results-bar">
           <span className="results-text">
             Showing <strong>{filteredScholarships.length}</strong> scholarships
@@ -250,8 +369,9 @@ function ScholarshipList({ user }) {
       )}
 
       {/* Scholarships Grid */}
-      <div className="scholarships-grid">
-        {filteredScholarships.map((scholarship) => {
+      {!loading && !error && (
+        <div className="scholarships-grid">
+          {filteredScholarships.map((scholarship) => {
           const eligibility = checkEligibility(scholarship);
           const daysLeft = getDaysLeft(scholarship.deadline);
 
@@ -311,10 +431,10 @@ function ScholarshipList({ user }) {
                   Max Income: ₹{(scholarship.eligibility.maxIncome / 100000).toFixed(1)}L
                 </span>
                 <span className="tag">
-                  {scholarship.eligibility.caste.includes("All") 
-                    ? "All Categories" 
-                    : scholarship.eligibility.caste.join(", ")}
-                </span>
+                {(scholarship.eligibility.category || scholarship.eligibility.caste || ["All"]).includes("All") 
+                  ? "All Categories" 
+                  : (scholarship.eligibility.category || scholarship.eligibility.caste || []).join(", ")}
+              </span>
               </div>
 
               <div className="scholarship-actions">
@@ -329,10 +449,11 @@ function ScholarshipList({ user }) {
             </div>
           );
         })}
-      </div>
+        </div>
+      )}
 
       {/* Empty State */}
-      {filteredScholarships.length === 0 && (
+      {!loading && !error && filteredScholarships.length === 0 && (
         <div className="empty-state">
           <Award className="empty-icon" />
           <h3>No scholarships found</h3>

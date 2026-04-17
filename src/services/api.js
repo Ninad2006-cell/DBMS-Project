@@ -1,4 +1,4 @@
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001/api';
+const API_BASE_URL = '/api';
 
 class ApiService {
   async request(endpoint, options = {}) {
@@ -148,6 +148,56 @@ class ApiService {
     return this.request(`/documents/${id}`, {
       method: 'DELETE',
     });
+  }
+
+  // Students API
+  async getStudents() {
+    return this.request('/students');
+  }
+
+  async getStudent(id) {
+    return this.request(`/students/${id}`);
+  }
+
+  async getStudentApplicationsFromAPI(studentId) {
+    return this.request(`/students/${studentId}/applications`);
+  }
+
+  async getStudentProfileByUserId(userId) {
+    return this.request(`/students/user/${userId}`);
+  }
+
+  async createStudentProfile(userId, profileData) {
+    return this.request(`/students/user/${userId}`, {
+      method: 'POST',
+      body: JSON.stringify(profileData),
+    });
+  }
+
+  async updateStudentProfile(userId, profileData) {
+    return this.request(`/students/user/${userId}`, {
+      method: 'PUT',
+      body: JSON.stringify(profileData),
+    });
+  }
+
+  // Users API - Authentication
+  async registerUser(userData) {
+    return this.request('/users/register', {
+      method: 'POST',
+      body: JSON.stringify(userData),
+    });
+  }
+
+  async loginUser(credentials) {
+    return this.request('/users/login', {
+      method: 'POST',
+      body: JSON.stringify(credentials),
+    });
+  }
+
+  async getUser(id) {
+    return this.request(`/users/${id}`);
   }
 }
 
