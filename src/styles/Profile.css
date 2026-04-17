@@ -527,11 +527,17 @@
   font-weight: 500;
   cursor: pointer;
   transition: all 0.2s;
+  user-select: none;
 }
 
 .upload-btn:hover {
   background: #f9fafb;
   border-color: #9ca3af;
+}
+
+.upload-btn.uploading {
+  opacity: 0.7;
+  cursor: not-allowed;
 }
 
 .documents-note {

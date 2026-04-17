@@ -239,4 +239,144 @@ router.post('/user/:userId', async (req, res) => {
   }
 });
 
+// Valid document types for student_docs table
+const VALID_DOCUMENT_TYPES = [
+  'income_certificate',
+  'caste_certificate',
+  'report_card',
+  'bonafide_certificate',
+  'bank_passbook',
+  'caste_validity',
+  'aadhar_card',
+  'pan_card',
+  'hostel_id_card',
+  'hostel_certificate',
+  'domicile'
+];
+
+// Upload student document to Supabase Storage and save URL to student_docs table
+router.post('/:studentId/documents', async (req, res) => {
+  try {
+    const { studentId } = req.params;
+    const { document_type, file_base64, file_name, content_type } = req.body;
+
+    // Validate document type
+    if (!VALID_DOCUMENT_TYPES.includes(document_type)) {
+      return res.status(400).json({
+        success: false,
+        error: `Invalid document type. Must be one of: ${VALID_DOCUMENT_TYPES.join(', ')}`
+      });
+    }
+
+    // Validate required fields
+    if (!file_base64 || !file_name) {
+      return res.status(400).json({
+        success: false,
+        error: 'file_base64 and file_name are required'
+      });
+    }
+
+    // 1. Create unique file path
+    const fileExtension = file_name.split('.').pop();
+    const uniqueFileName = `${Date.now()}-${Math.random().toString(36).substring(2, 9)}.${fileExtension}`;
+    const filePath = `${studentId}/${document_type}/${uniqueFileName}`;
+
+    // 2. Convert base64 to buffer and upload to students_documents bucket
+    const fileBuffer = Buffer.from(file_base64, 'base64');
+
+    const { data: uploadData, error: uploadError } = await supabase.storage
+      .from('students_documents')
+      .upload(filePath, fileBuffer, {
+        contentType: content_type || 'application/octet-stream',
+        upsert: false
+      });
+
+    if (uploadError) {
+      console.error('Supabase storage upload error:', uploadError);
+      throw new Error(`Storage upload failed: ${uploadError.message}`);
+    }
+
+    // 3. Get public URL for the uploaded file
+    const { data: urlData } = supabase.storage
+      .from('students_documents')
+      .getPublicUrl(filePath);
+
+    const publicUrl = urlData.publicUrl;
+
+    // 4. Check if student_docs record exists
+    const { data: existingDoc, error: checkError } = await supabase
+      .from('student_docs')
+      .select('*')
+      .eq('student_id', studentId)
+      .single();
+
+    if (checkError && checkError.code !== 'PGRST116') throw checkError;
+
+    // 5. Insert or update the document URL in student_docs table
+    let dbResult;
+    if (existingDoc) {
+      // Update existing record
+      const { data, error: dbError } = await supabase
+        .from('student_docs')
+        .update({ [document_type]: publicUrl })
+        .eq('student_id', studentId)
+        .select()
+        .single();
+
+      if (dbError) throw dbError;
+      dbResult = data;
+    } else {
+      // Insert new record
+      const { data, error: dbError } = await supabase
+        .from('student_docs')
+        .insert({
+          student_id: studentId,
+          [document_type]: publicUrl
+        })
+        .select()
+        .single();
+
+      if (dbError) throw dbError;
+      dbResult = data;
+    }
+
+    res.status(201).json({
+      success: true,
+      data: {
+        document_type,
+        file_url: publicUrl,
+        file_path: filePath,
+        student_docs: dbResult
+      }
+    });
+
+  } catch (error) {
+    console.error('Error uploading document:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Get all documents for a student
+router.get('/:studentId/documents', async (req, res) => {
+  try {
+    const { studentId } = req.params;
+
+    const { data, error } = await supabase
+      .from('student_docs')
+      .select('*')
+      .eq('student_id', studentId)
+      .single();
+
+    if (error && error.code !== 'PGRST116') throw error;
+
+    if (!data) {
+      return res.json({ success: true, data: null });
+    }
+
+    res.json({ success: true, data });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 export default router;

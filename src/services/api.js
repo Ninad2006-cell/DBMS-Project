@@ -181,6 +181,17 @@ class ApiService {
     });
   }
 
+  async uploadStudentDocument(studentId, documentData) {
+    return this.request(`/students/${studentId}/documents`, {
+      method: 'POST',
+      body: JSON.stringify(documentData),
+    });
+  }
+
+  async getStudentDocuments(studentId) {
+    return this.request(`/students/${studentId}/documents`);
+  }
+
   // Users API - Authentication
   async registerUser(userData) {
     return this.request('/users/register', {

@@ -28,6 +28,8 @@ function Profile({ user, onUpdateUser }) {
   const [error, setError] = useState(null);
   const [saving, setSaving] = useState(false);
   const [editedProfile, setEditedProfile] = useState({});
+  const [documents, setDocuments] = useState({});
+  const [uploadingDoc, setUploadingDoc] = useState(null);
 
   // Fetch profile data from database
   useEffect(() => {
@@ -41,10 +43,12 @@ function Profile({ user, onUpdateUser }) {
         setLoading(true);
         setError(null);
         const response = await apiService.getStudentProfileByUserId(user.user_id);
-        
+
         if (response.success && response.data) {
           setProfile(response.data);
           setEditedProfile(response.data);
+          // Fetch student documents
+          fetchDocuments(response.data.id);
         } else {
           // Profile doesn't exist yet, create default profile
           const defaultProfile = {
@@ -82,6 +86,18 @@ function Profile({ user, onUpdateUser }) {
         setEditedProfile(defaultProfile);
       } finally {
         setLoading(false);
+      }
+    };
+
+    const fetchDocuments = async (studentId) => {
+      if (!studentId) return;
+      try {
+        const response = await apiService.getStudentDocuments(studentId);
+        if (response.success && response.data) {
+          setDocuments(response.data);
+        }
+      } catch (err) {
+        console.error('Failed to fetch documents:', err);
       }
     };
 
@@ -149,13 +165,70 @@ function Profile({ user, onUpdateUser }) {
     setError(null);
   };
 
-  const documentStatus = [
-    { name: "Income Certificate", key: "incomeCertificate", required: true },
-    { name: "Caste Certificate", key: "casteCertificate", required: (profile?.category || '') !== "General" },
-    { name: "Marksheet", key: "marksheet", required: true },
-    { name: "Bonafide Certificate", key: "bonafide", required: true },
-    { name: "Bank Passbook", key: "bankPassbook", required: true },
+  // Document configuration with mapping to database column names
+  const documentConfig = [
+    { name: "Income Certificate", key: "incomeCertificate", dbColumn: "income_certificate", required: true },
+    { name: "Caste Certificate", key: "casteCertificate", dbColumn: "caste_certificate", required: (profile?.category || '') !== "General" },
+    { name: "Report Card/Marksheet", key: "marksheet", dbColumn: "report_card", required: true },
+    { name: "Bonafide Certificate", key: "bonafide", dbColumn: "bonafide_certificate", required: true },
+    { name: "Bank Passbook", key: "bankPassbook", dbColumn: "bank_passbook", required: true },
+    { name: "Caste Validity", key: "casteValidity", dbColumn: "caste_validity", required: (profile?.category || '') !== "General" },
+    { name: "Aadhar Card", key: "aadharCard", dbColumn: "aadhar_card", required: false },
+    { name: "PAN Card", key: "panCard", dbColumn: "pan_card", required: false },
+    { name: "Hostel ID Card", key: "hostelIdCard", dbColumn: "hostel_id_card", required: profile?.hosteller },
+    { name: "Hostel Certificate", key: "hostelCertificate", dbColumn: "hostel_certificate", required: profile?.hosteller },
+    { name: "Domicile Certificate", key: "domicile", dbColumn: "domicile", required: false },
   ];
+
+  // Handle file selection and upload
+  const handleFileSelect = async (docConfig, file) => {
+    if (!file || !profile?.id) return;
+
+    try {
+      setUploadingDoc(docConfig.key);
+      setError(null);
+
+      // Convert file to base64
+      const reader = new FileReader();
+      reader.readAsDataURL(file);
+
+      reader.onloadend = async () => {
+        try {
+          const base64String = reader.result.split(',')[1];
+
+          const uploadData = {
+            document_type: docConfig.dbColumn,
+            file_base64: base64String,
+            file_name: file.name,
+            content_type: file.type
+          };
+
+          const response = await apiService.uploadStudentDocument(profile.id, uploadData);
+
+          if (response.success) {
+            // Update local documents state
+            setDocuments(prev => ({
+              ...prev,
+              [docConfig.dbColumn]: response.data.file_url
+            }));
+          }
+        } catch (err) {
+          setError(`Failed to upload ${docConfig.name}: ${err.message}`);
+        } finally {
+          setUploadingDoc(null);
+        }
+      };
+
+      reader.onerror = () => {
+        setError(`Failed to read file: ${docConfig.name}`);
+        setUploadingDoc(null);
+      };
+
+    } catch (err) {
+      setError(`Failed to upload ${docConfig.name}: ${err.message}`);
+      setUploadingDoc(null);
+    }
+  };
 
   // Loading state
   if (loading) {
@@ -541,38 +614,64 @@ function Profile({ user, onUpdateUser }) {
               </div>
 
               <div className="documents-list">
-                {documentStatus.map((doc) => (
-                  <div
-                    key={doc.key}
-                    className={`document-item ${user?.documents?.[doc.key] ? "uploaded" : "missing"}`}
-                  >
-                    <div className="document-info">
-                      <div className="document-icon-wrapper">
-                        {user?.documents?.[doc.key] ? (
-                          <CheckCircle className="document-icon success" />
+                {documentConfig.map((doc) => {
+                  const isUploaded = !!documents[doc.dbColumn];
+                  const isUploading = uploadingDoc === doc.key;
+
+                  return (
+                    <div
+                      key={doc.key}
+                      className={`document-item ${isUploaded ? "uploaded" : "missing"}`}
+                    >
+                      <div className="document-info">
+                        <div className="document-icon-wrapper">
+                          {isUploaded ? (
+                            <CheckCircle className="document-icon success" />
+                          ) : (
+                            <Upload className="document-icon" />
+                          )}
+                        </div>
+                        <div className="document-details">
+                          <span className="document-name">{doc.name}</span>
+                          {doc.required && (
+                            <span className="required-badge">Required</span>
+                          )}
+                        </div>
+                      </div>
+                      <div className="document-status">
+                        {isUploaded ? (
+                          <span className="status-badge verified">Uploaded</span>
                         ) : (
-                          <Upload className="document-icon" />
-                        )}
-                      </div>
-                      <div className="document-details">
-                        <span className="document-name">{doc.name}</span>
-                        {doc.required && (
-                          <span className="required-badge">Required</span>
+                          <>
+                            <input
+                              type="file"
+                              id={`file-${doc.key}`}
+                              accept=".pdf,.jpg,.jpeg,.png"
+                              style={{ display: 'none' }}
+                              onChange={(e) => {
+                                if (e.target.files?.[0]) {
+                                  handleFileSelect(doc, e.target.files[0]);
+                                }
+                              }}
+                              disabled={isUploading}
+                            />
+                            <label
+                              htmlFor={`file-${doc.key}`}
+                              className={`upload-btn ${isUploading ? 'uploading' : ''}`}
+                            >
+                              {isUploading ? (
+                                <Loader className="btn-icon spinner" />
+                              ) : (
+                                <Upload className="btn-icon" />
+                              )}
+                              {isUploading ? 'Uploading...' : 'Upload'}
+                            </label>
+                          </>
                         )}
                       </div>
                     </div>
-                    <div className="document-status">
-                      {user?.documents?.[doc.key] ? (
-                        <span className="status-badge verified">Verified</span>
-                      ) : (
-                        <button className="upload-btn" disabled>
-                          <Upload className="btn-icon" />
-                          Upload
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
 
               <div className="documents-note">
