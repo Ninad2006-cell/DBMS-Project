@@ -99,16 +99,26 @@ function AdminApplications() {
         const notificationMessage = `Admin has added remarks to your application for ${selectedApp.scholarships?.name}: "${remarks}"`;
 
         try {
-          await apiService.createNotification({
+          console.log('Creating notification with data:', {
             user_id: userId,
             scholarship_id: selectedApp.scholarship_id,
             message: notificationMessage,
-            notification_type: 'admin_remark'
+            notification_type: 'general'
           });
+          const response = await apiService.createNotification({
+            user_id: userId,
+            scholarship_id: selectedApp.scholarship_id,
+            message: notificationMessage,
+            notification_type: 'general'
+          });
+          console.log('Notification created successfully:', response);
           alert('Remarks sent successfully! Student will be notified.');
         } catch (notifErr) {
           console.error('Failed to create notification:', notifErr);
-          alert('Remarks saved but notification failed.');
+          console.error('Error details:', notifErr.message);
+          console.error('Selected app data:', selectedApp);
+          console.error('Student profile:', selectedApp?.student_profile);
+          alert('Remarks saved but notification failed: ' + notifErr.message);
         }
       } else {
         console.error('No user_id found in student_profile:', selectedApp.student_profile);
