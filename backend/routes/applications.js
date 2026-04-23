@@ -1,5 +1,6 @@
 import express from 'express';
 import { supabase } from '../config/supabase.js';
+import { sendApplicationSubmittedEmail, sendApplicationApprovedEmail, sendApplicationRejectedEmail } from '../utils/email.js';
 
 const router = express.Router();
 
@@ -127,10 +128,10 @@ router.post('/', async (req, res) => {
   try {
     const { student_id, scholarship_id, status, admin_notes } = req.body;
 
-    // Get student profile to find user_id for notification
+    // Get student profile to find user_id and email for notification
     const { data: studentProfile, error: studentError } = await supabase
       .from('student_profile')
-      .select('user_id')
+      .select('user_id, users(email, name)')
       .eq('student_id', student_id)
       .single();
 
@@ -177,6 +178,13 @@ router.post('/', async (req, res) => {
 
       if (notifError) {
         console.error('Error creating notification:', notifError.message);
+      }
+
+      // Send email notification
+      const studentEmail = studentProfile.users?.email;
+      const studentName = studentProfile.users?.name || 'Student';
+      if (studentEmail) {
+        await sendApplicationSubmittedEmail(studentEmail, studentName, scholarship.name);
       }
     }
 
@@ -234,10 +242,10 @@ router.put('/:id', async (req, res) => {
 
     if (fetchError) throw fetchError;
 
-    // Get student profile to find user_id for notification
+    // Get student profile to find user_id and email for notification
     const { data: studentProfile, error: studentError } = await supabase
       .from('student_profile')
-      .select('user_id')
+      .select('user_id, users(email, name)')
       .eq('student_id', currentApp.student_id)
       .single();
 
@@ -287,6 +295,17 @@ router.put('/:id', async (req, res) => {
 
     if (notifError) {
       console.error('Error creating notification:', notifError.message);
+    }
+
+    // Send email notification for status update
+    const studentEmail = studentProfile.users?.email;
+    const studentName = studentProfile.users?.name || 'Student';
+    if (studentEmail) {
+      if (status === 'approved') {
+        await sendApplicationApprovedEmail(studentEmail, studentName, scholarship.name);
+      } else if (status === 'rejected') {
+        await sendApplicationRejectedEmail(studentEmail, studentName, scholarship.name, admin_notes);
+      }
     }
 
     res.json({ success: true, data });
