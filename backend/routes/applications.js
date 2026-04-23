@@ -277,34 +277,37 @@ router.put('/:id', async (req, res) => {
       return res.status(404).json({ success: false, error: 'Application not found' });
     }
 
-    // Create notification for student
-    const statusMessage = status === 'approved'
-      ? `Congratulations! Your application for ${scholarship.name} has been approved.`
-      : `Your application for ${scholarship.name} has been ${status}.`;
+    // Only create notification and send email if status is being updated
+    if (status) {
+      // Create notification for student
+      const statusMessage = status === 'approved'
+        ? `Congratulations! Your application for ${scholarship.name} has been approved.`
+        : `Your application for ${scholarship.name} has been ${status}.`;
 
-    const { error: notifError } = await supabase
-      .from('notifications')
-      .insert({
-        user_id: studentProfile.user_id,
-        scholarship_id: currentApp.scholarship_id,
-        message: statusMessage,
-        notification_type: 'application',
-        read_status: false,
-        created_at: new Date().toISOString()
-      });
+      const { error: notifError } = await supabase
+        .from('notifications')
+        .insert({
+          user_id: studentProfile.user_id,
+          scholarship_id: currentApp.scholarship_id,
+          message: statusMessage,
+          notification_type: 'application',
+          read_status: false,
+          created_at: new Date().toISOString()
+        });
 
-    if (notifError) {
-      console.error('Error creating notification:', notifError.message);
-    }
+      if (notifError) {
+        console.error('Error creating notification:', notifError.message);
+      }
 
-    // Send email notification for status update
-    const studentEmail = studentProfile.users?.email;
-    const studentName = studentProfile.users?.name || 'Student';
-    if (studentEmail) {
-      if (status === 'approved') {
-        await sendApplicationApprovedEmail(studentEmail, studentName, scholarship.name);
-      } else if (status === 'rejected') {
-        await sendApplicationRejectedEmail(studentEmail, studentName, scholarship.name, admin_notes);
+      // Send email notification for status update
+      const studentEmail = studentProfile.users?.email;
+      const studentName = studentProfile.users?.name || 'Student';
+      if (studentEmail) {
+        if (status === 'approved') {
+          await sendApplicationApprovedEmail(studentEmail, studentName, scholarship.name);
+        } else if (status === 'rejected') {
+          await sendApplicationRejectedEmail(studentEmail, studentName, scholarship.name, admin_notes);
+        }
       }
     }
 
