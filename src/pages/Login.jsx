@@ -57,9 +57,11 @@ function Login({ onLogin }) {
         
         if (response.success) {
           // Auto login after signup
+          const role = isAdmin ? 'admin' : 'student';
           const loginResponse = await apiService.loginUser({
             email: formData.email,
-            password: formData.password
+            password: formData.password,
+            role: role
           });
           
           if (loginResponse.success) {

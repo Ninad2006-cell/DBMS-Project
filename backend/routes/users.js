@@ -1,4 +1,5 @@
 import express from 'express';
+import bcrypt from 'bcrypt';
 import { supabase } from '../config/supabase.js';
 
 const router = express.Router();
@@ -29,13 +30,17 @@ router.post('/register', async (req, res) => {
       });
     }
 
+    // Hash password before storing
+    const saltRounds = 10;
+    const hashedPassword = await bcrypt.hash(password, saltRounds);
+
     // Insert into users table
     const { data, error } = await supabase
       .from('users')
       .insert([{
         name,
         email,
-        passcode: password,
+        passcode: hashedPassword,
         role
       }])
       .select()
@@ -82,8 +87,9 @@ router.post('/login', async (req, res) => {
       });
     }
 
-    // Check password (in production, use bcrypt to compare hashed passwords)
-    if (data.passcode !== password) {
+    // Verify password using bcrypt
+    const isPasswordValid = await bcrypt.compare(password, data.passcode);
+    if (!isPasswordValid) {
       return res.status(401).json({ 
         success: false, 
         error: 'Invalid email or password' 
